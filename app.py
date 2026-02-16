@@ -1,8 +1,15 @@
+import os
 import streamlit as st
-import sounddevice as sd
-import soundfile as sf
 import numpy as np
+import soundfile as sf
 import whisper
+
+# -------- ENVIRONMENT DETECTION --------
+IS_CLOUD = os.getenv("STREAMLIT_SERVER_RUNNING") == "true"
+
+# -------- SAFE IMPORTS --------
+if not IS_CLOUD:
+    import sounddevice as sd  # only available locally
 
 from voice_confidence import (
     extract_voice_features,
@@ -14,7 +21,6 @@ from text_sentiment import classify_transcript_sentiment
 from tone_analyzer import analyze_tone
 from sarcasm_detector import detect_sarcasm
 
-
 # ===================== PAGE CONFIG =====================
 st.set_page_config(
     page_title="Voice Emotional Intelligence",
@@ -22,37 +28,61 @@ st.set_page_config(
 )
 
 st.title("🧠 Voice Emotional Intelligence")
-st.caption("Deep Voice-Based Audience Understanding (Voice Only)")
+st.caption("Deep Voice-Based Audience Understanding (Local + Cloud)")
 
+# ===================== INPUT MODE =====================
+st.subheader("🎛 Input Mode")
 
-# ===================== RECORD BUTTON =====================
-if st.button("🎙 Record Voice (5 seconds)"):
+mode = st.radio(
+    "Choose input method",
+    options=["Upload Audio (Cloud & Local)", "Live Record (Local only)"],
+    disabled=IS_CLOUD
+)
 
-    SAMPLE_RATE = 44100
-    DURATION = 5
+audio_path = None
 
-    st.info("Recording... Speak naturally")
-    audio = sd.rec(
-        int(DURATION * SAMPLE_RATE),
-        samplerate=SAMPLE_RATE,
-        channels=1
-    )
-    sd.wait()
+# ===================== UPLOAD MODE =====================
+if mode == "Upload Audio (Cloud & Local)":
+    audio_file = st.file_uploader("📤 Upload audio (.wav)", type=["wav"])
 
-    audio = audio / (np.max(np.abs(audio)) + 1e-6)
-    sf.write("input.wav", audio, SAMPLE_RATE)
+    if audio_file:
+        with open("input.wav", "wb") as f:
+            f.write(audio_file.read())
+        audio_path = "input.wav"
+        st.success("Audio uploaded successfully")
 
-    st.success("Recording complete")
+# ===================== LIVE RECORD MODE (LOCAL ONLY) =====================
+if mode == "Live Record (Local only)" and not IS_CLOUD:
 
+    if st.button("🎙 Record Voice (5 seconds)"):
+        SAMPLE_RATE = 44100
+        DURATION = 5
 
-    # ===================== TRANSCRIPTION =====================
-    model = whisper.load_model("small")
-    result = model.transcribe("input.wav", fp16=False)
-    text = result["text"].strip()
+        st.info("Recording... Speak naturally")
+        audio = sd.rec(
+            int(DURATION * SAMPLE_RATE),
+            samplerate=SAMPLE_RATE,
+            channels=1
+        )
+        sd.wait()
 
+        audio = audio / (np.max(np.abs(audio)) + 1e-6)
+        sf.write("input.wav", audio, SAMPLE_RATE)
 
-    # ===================== ANALYSIS =====================
-    voice = extract_voice_features("input.wav", text)
+        audio_path = "input.wav"
+        st.success("Recording complete")
+
+# ===================== PROCESSING PIPELINE =====================
+if audio_path:
+
+    # ---------- TRANSCRIPTION ----------
+    with st.spinner("Transcribing speech..."):
+        model = whisper.load_model("tiny")  # cloud-safe
+        result = model.transcribe(audio_path, fp16=False)
+        text = result["text"].strip()
+
+    # ---------- ANALYSIS ----------
+    voice = extract_voice_features(audio_path, text)
     hesitation = detect_hesitation(text)
     text_certainty = analyze_text_certainty(text)
 
@@ -75,7 +105,6 @@ if st.button("🎙 Record Voice (5 seconds)"):
     sarcasm = sarcasm_info["sarcasm"]
     sarcasm_reason = sarcasm_info["reason"]
 
-
     # ===================== FINAL DECISION =====================
     if sarcasm:
         final = "Negative"
@@ -97,7 +126,6 @@ if st.button("🎙 Record Voice (5 seconds)"):
         final = "Neutral"
         reason = "Mixed or neutral audience response"
 
-
     # ===================== FINAL OUTPUT =====================
     st.subheader("🎯 Final Audience Response")
 
@@ -110,8 +138,7 @@ if st.button("🎙 Record Voice (5 seconds)"):
 
     st.caption(reason)
 
-
-    # ===================== ANALYZE DROPDOWN =====================
+    # ===================== ANALYSIS DETAILS =====================
     with st.expander("🔍 Analyze"):
         st.markdown("### 🧾 Transcription")
         st.write(text)
