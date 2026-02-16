@@ -6,16 +6,16 @@ import soundfile as sf
 import whisper
 
 # =====================================================
-# ENVIRONMENT DETECTION
+# ENVIRONMENT DETECTION (CORRECT & RELIABLE)
 # =====================================================
-IS_CLOUD = os.getenv("STREAMLIT_SERVER_RUNNING") == "true"
+IS_CLOUD = not st.runtime.exists()  # True on Streamlit Cloud, False locally
 
 # sounddevice works ONLY locally
 if not IS_CLOUD:
     import sounddevice as sd
 
 # =====================================================
-# IMPORT YOUR CORE MODULES
+# IMPORT CORE MODULES
 # =====================================================
 from voice_confidence import (
     extract_voice_features,
@@ -23,7 +23,6 @@ from voice_confidence import (
     analyze_text_certainty,
     estimate_confidence
 )
-
 from text_sentiment import classify_transcript_sentiment
 from tone_analyzer import analyze_tone
 from sarcasm_detector import detect_sarcasm
@@ -38,14 +37,14 @@ st.set_page_config(
 )
 
 st.title("🧠 Voice Emotional Intelligence")
-st.caption("Audience & Market Acceptance Analysis (Local + Cloud)")
+st.caption("Audience & Market Acceptance Analysis (Local + Cloud Safe)")
 
 # =====================================================
-# LOAD WHISPER ONCE (VERY IMPORTANT)
+# LOAD WHISPER ONCE (CRITICAL FOR CLOUD)
 # =====================================================
 @st.cache_resource
 def load_whisper():
-    return whisper.load_model("tiny")
+    return whisper.load_model("tiny")  # CPU-safe
 
 model = load_whisper()
 
@@ -69,10 +68,10 @@ if mode == "Upload Audio (Cloud & Local)":
     audio_file = st.file_uploader("📤 Upload WAV audio", type=["wav"])
 
     if audio_file:
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-        tmp.write(audio_file.read())
-        tmp.close()
-        audio_path = tmp.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(audio_file.read())
+            audio_path = tmp.name
+
         st.success("Audio uploaded successfully")
 
 # =====================================================
@@ -93,9 +92,9 @@ if mode == "Live Record (Local only)" and not IS_CLOUD:
 
         audio = audio / (np.max(np.abs(audio)) + 1e-6)
 
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-        sf.write(tmp.name, audio, SAMPLE_RATE)
-        audio_path = tmp.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            sf.write(tmp.name, audio, SAMPLE_RATE)
+            audio_path = tmp.name
 
         st.success("Recording complete")
 
@@ -103,7 +102,6 @@ if mode == "Live Record (Local only)" and not IS_CLOUD:
 # PROCESSING PIPELINE
 # =====================================================
 if audio_path:
-
     # ---------------- TRANSCRIPTION ----------------
     with st.spinner("📝 Transcribing speech..."):
         result = model.transcribe(audio_path, fp16=False)
@@ -140,11 +138,9 @@ if audio_path:
     if sarcasm:
         final = "Negative"
         reason = sarcasm_reason
-
     elif neg > pos:
         final = "Negative"
         reason = "Negative wording detected in speech"
-
     elif sentiment == "Positive":
         if hesitation in ["Medium", "High"] or confidence == "Low":
             final = "Neutral"
@@ -152,7 +148,6 @@ if audio_path:
         else:
             final = "Positive"
             reason = "Positive wording supported by confident delivery"
-
     else:
         final = "Neutral"
         reason = "Mixed or neutral audience response"
@@ -175,7 +170,6 @@ if audio_path:
     # DETAILED ANALYSIS
     # =================================================
     with st.expander("🔍 Detailed Analysis"):
-
         st.markdown("### 🧾 Transcription")
         st.write(text)
 
@@ -185,7 +179,7 @@ if audio_path:
             "Positive Words": pos,
             "Negative Words": neg,
             "Downgrade Words": down,
-            "Contrast ('but') Detected": has_but
+            "Contrast ('but')": has_but
         })
 
         st.markdown("### 🎤 Voice Features")
