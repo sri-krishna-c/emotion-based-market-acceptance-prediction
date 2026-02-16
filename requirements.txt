@@ -1,0 +1,12 @@
+streamlit
+numpy
+scipy
+librosa
+soundfile
+openai-whisper
+transformers
+torch
+torchaudio
+deepface
+opencv-python-headless
+ffmpeg-python
